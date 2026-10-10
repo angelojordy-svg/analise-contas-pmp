@@ -657,19 +657,20 @@ function renderRecMatrix(rows){
   const topSet=new Set(top),mat={},dem=new Array(nM).fill(0);
   rows.forEach(r=>{const k=D.classif[r[4]][2],m=r[1];
     if(topSet.has(k)){(mat[k]=mat[k]||new Array(nM).fill(0))[m]+=r[3];}else{dem[m]+=r[3];}});
+  const grand=soma(rows,3)||1;
   function linha(label,arr){let s='<tr><td class="lblcol">'+esc(label)+'</td>',t=0;
     arr.forEach(v=>{s+='<td class="num">'+(v?brl(v):'')+'</td>';t+=v;});
-    return s+'<td class="num"><b>'+brl(t)+'</b></td></tr>';}
+    return s+'<td class="num"><b>'+brl(t)+'</b></td><td class="num">'+pct(t/grand)+'</td></tr>';}
   const totArr=new Array(nM).fill(0);rows.forEach(r=>{totArr[r[1]]+=r[3];});
   let head='<tr><th class="lblcol">Espécie (tipo de receita)</th>';
   M.forEach(m=>{head+='<th class="num">'+esc(mesAbrev(m))+'</th>';});
-  head+='<th class="num">Total</th></tr>';
+  head+='<th class="num">Total</th><th class="num">%</th></tr>';
   let body='';
   top.forEach(k=>{body+=linha(k,mat[k]||new Array(nM).fill(0));});
   if(dem.reduce((a,b)=>a+b,0)>0)body+=linha('Demais',dem);
   body+='<tr class="lvl0"><td class="lblcol">Total</td>'+
     totArr.map(v=>'<td class="num">'+brl(v)+'</td>').join('')+
-    '<td class="num">'+brl(soma(rows,3))+'</td></tr>';
+    '<td class="num">'+brl(soma(rows,3))+'</td><td class="num">'+pct(1)+'</td></tr>';
   $('recMatrix').innerHTML='<div class="tablewrap"><table class="pivot"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>';
   $('recMatHint').innerHTML='Top '+top.length+' espécies por arrecadação + <b>Demais</b> · colunas mês a mês (respeitam os filtros).';
 }
