@@ -162,6 +162,22 @@ tr.lvl0:hover,tr.lvl1:hover,tr.lvl2:hover,tr.lvl3:hover,tr.lvl4:hover{background
 .pager .pg[disabled]{opacity:.4;cursor:default}
 footer{padding:8px 26px 44px;color:var(--muted);font-size:12px;max-width:1560px;margin:0 auto}
 .warn{color:var(--amber)}
+.impomat{position:relative;overflow:hidden;background:linear-gradient(120deg,rgba(52,211,153,.14),rgba(168,85,247,.10));margin:18px 0 0}
+.imp-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.imp-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);font-weight:800}
+.imp-meta{font-size:11px;color:var(--muted)}
+.odo{display:flex;align-items:baseline;gap:2px;margin:6px 0 2px;font-weight:800;
+  font-size:clamp(34px,7vw,74px);line-height:1;font-variant-numeric:tabular-nums;
+  color:var(--ink);text-shadow:0 0 26px rgba(52,211,153,.35)}
+.odo .cur{font-size:.5em;color:var(--muted);align-self:flex-start;margin-top:.14em}
+.odo .cell{position:relative;display:inline-block;width:.64em;height:1em;overflow:hidden}
+.odo .strip{position:absolute;left:0;top:0;display:flex;flex-direction:column;
+  transition:transform .7s cubic-bezier(.16,1,.3,1)}
+.odo .strip span{display:block;height:1em;line-height:1;text-align:center}
+.odo .sep{color:var(--muted);opacity:.65}
+.imp-sub{margin-top:6px;font-size:12px;color:var(--muted)}
+.imp-sub b{color:var(--ink)}
+@media (prefers-reduced-motion: reduce){.odo .strip{transition:none}}
 body.menusOff #filters{display:none}
 @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @media(max-width:960px){.grid{grid-template-columns:1fr}.top .side{align-items:flex-start}.meta{text-align:left}
@@ -198,7 +214,13 @@ body.menusOff #filters{display:none}
   </div>
 
   <div id="tab-receitas" class="tabpage" style="display:none">
+    <section class="card impomat" id="impBox" aria-label="Impostômetro de receitas">
+      <div class="imp-head"><span class="imp-lbl">Receita arrecadada no período</span><span class="imp-meta" id="impMeta"></span></div>
+      <div class="odo" id="impOdo" role="img" aria-label="Valor arrecadado no período"></div>
+      <div class="imp-sub" id="impSub"></div>
+    </section>
     <section class="kpis" id="recKpis" aria-label="Indicadores de receita"></section>
+    <div class="hint" id="recHint">Clique numa barra/ponto dos gráficos para filtrar tudo automaticamente (clique de novo para remover).</div>
     <div class="grid">
       <section class="card wide"><h2>Receita por Categoria e Origem</h2>
         <div class="two"><figure id="chRecCat"></figure><figure id="chRecOrig"></figure></div></section>
@@ -288,6 +310,15 @@ function ok(set,v){return set.size===0||set.has(v);}
 function okSetArr(arr,set,v){if(set.size===0)return true;const i=arr.indexOf(v);return i>=0&&set.has(i);}
 function soma(rows,i){let s=0;for(const r of rows)s+=r[i];return s;}
 function objItems(map,n){return Object.entries(map).map(([label,value])=>({label,value})).sort((a,b)=>b.value-a.value).slice(0,n||1e9);}
+function itemsIdx(map,lista,n){return Object.entries(map).map(([label,value])=>({idx:lista.indexOf(label),label:label,value:value}))
+  .filter(x=>x.idx>=0).sort((a,b)=>b.value-a.value).slice(0,n||1e9);}
+/* meses já encerrados (o mês corrente, incompleto, não entra na média até virar) */
+function mesesFechados(){const n=D.meses.length,fim=String((D.meta&&D.meta.fim)||'').split('/');
+  if(fim.length<3)return n;const dia=+fim[0],mo=+fim[1],ano=+fim[2];let c=0;
+  for(let i=0;i<n;i++){const mm=+String(D.meses[i]).slice(5,7),yy=+String(D.meses[i]).slice(0,4);
+    const last=new Date(yy,mm,0).getDate();
+    if(yy<ano||(yy===ano&&(mm<mo||(mm===mo&&dia>=last))))c=i+1;}
+  return c;}
 
 /* ---------- filtros (por aba) ---------- */
 function buildFilters(){
@@ -391,7 +422,11 @@ function orgMembers(oi){const e=D.orgaos[oi];if(!e)return[];
       const k=D.dims.org.findIndex(o=>{const b=normOrg(o);return b.indexOf('gabinete')>=0&&b.indexOf('vice')<0;});
       if(k>=0)out.push(k);}}
   return out;}
-function pickChart(dim,idx){const g=FIL.geral;
+function pickChart(dim,idx){
+  if(dim==='contrib'){const rc=FIL.receitas;const name=(RCONTRIB[+idx]||'').toLowerCase();
+    if(name&&rc.contribQ===name)rc.contribQ='';else rc.contribQ=name;
+    buildFilters();refresh();renderSlim();return;}
+  const g=FIL[ACTIVE];
   if(dim==='org'){const mem=orgMembers(idx);if(!mem.length)return;
     if(mem.every(m=>g.org.has(m)))mem.forEach(m=>g.org.delete(m));else mem.forEach(m=>g.org.add(m));}
   else{const s=g[dim];if(!s)return;const k=+idx;
@@ -452,8 +487,10 @@ function mensal(labels,receita,pes,vale,dem,u,opt){
   const max=Math.max(1,...tot,...(hideRec?[]:receita));
   const y0=h-padB,yy=v=>y0-(v/max)*(h-padT-padB);
   let accR=0,accT=0;
-  const cumRec=receita.map((v,i)=>{accR+=v;return accR/(i+1);});
-  const cumTot=tot.map((v,i)=>{accT+=v;return accT/(i+1);});
+  const nAvg=(opt&&opt.avgClosed!=null)?Math.max(0,Math.min(opt.avgClosed,n)):n;
+  const cumRec=[],cumTot=[];
+  for(let i=0;i<nAvg;i++){accR+=receita[i]||0;cumRec.push(accR/(i+1));}
+  for(let i=0;i<nAvg;i++){accT+=tot[i]||0;cumTot.push(accT/(i+1));}
   let def='<defs>'+gradDef('rc_'+u,GRAD.receita[0],GRAD.receita[1])+gradDef('pe_'+u,GRAD.pessoal[0],GRAD.pessoal[1])+
     gradDef('va_'+u,GRAD.vale[0],GRAD.vale[1])+gradDef('de_'+u,GRAD.demais[0],GRAD.demais[1])+glowDef('rc_'+u+'_g')+'</defs>';
   let s=svgOpen(w,h)+def;
@@ -471,10 +508,10 @@ function mensal(labels,receita,pes,vale,dem,u,opt){
       s+='<rect class="bar" x="'+xd+'" y="'+yTop+'" width="'+bw+'" height="'+(yBot-yTop)+'" fill="url(#'+g+'_'+u+')"'+click+'><title>'+esc(lb)+' · despesa: '+full(v)+atitle+'</title></rect>';acum+=v;});
     s+='<text class="bl" x="'+(bx+cw/2)+'" y="'+(y0+16)+'" text-anchor="middle">'+esc(lb)+'</text>';});
   const pts=(arr)=>arr.map((v,i)=>((padL+i*cw+cw/2).toFixed(1)+','+yy(v).toFixed(1))).join(' ');
-  if(!hideRec&&n>0)s+='<polyline points="'+pts(cumRec)+'" fill="none" stroke="'+COR.receita+'" stroke-width="1.8" stroke-dasharray="7 4" opacity="0.9"><title>Média acumulada receita: '+full(cumRec[n-1])+'</title></polyline>'+
-    '<text class="bv" x="'+(w-padR-4)+'" y="'+(yy(cumRec[n-1])-5)+'" text-anchor="end">Média '+brl(cumRec[n-1])+'</text>';
-  if(n>0)s+='<polyline points="'+pts(cumTot)+'" fill="none" stroke="'+COR.amber+'" stroke-width="1.8" stroke-dasharray="7 4" opacity="0.9"><title>Média acumulada despesa: '+full(cumTot[n-1])+'</title></polyline>'+
-    '<text class="bv" x="'+(w-padR-4)+'" y="'+(yy(cumTot[n-1])+13)+'" text-anchor="end">Média '+brl(cumTot[n-1])+'</text>';
+  if(!hideRec&&nAvg>0)s+='<polyline points="'+pts(cumRec)+'" fill="none" stroke="'+COR.receita+'" stroke-width="1.8" stroke-dasharray="7 4" opacity="0.9"><title>Média acumulada receita ('+nAvg+' meses fechados): '+full(cumRec[nAvg-1])+'</title></polyline>'+
+    '<text class="bv" x="'+(w-padR-4)+'" y="'+(yy(cumRec[nAvg-1])-5)+'" text-anchor="end">Média '+brl(cumRec[nAvg-1])+'</text>';
+  if(nAvg>0)s+='<polyline points="'+pts(cumTot)+'" fill="none" stroke="'+COR.amber+'" stroke-width="1.8" stroke-dasharray="7 4" opacity="0.9"><title>Média acumulada despesa ('+nAvg+' meses fechados): '+full(cumTot[nAvg-1])+'</title></polyline>'+
+    '<text class="bv" x="'+(w-padR-4)+'" y="'+(yy(cumTot[nAvg-1])+13)+'" text-anchor="end">Média '+brl(cumTot[nAvg-1])+'</text>';
   s+='<line x1="'+padL+'" y1="'+y0+'" x2="'+(w-padR)+'" y2="'+y0+'" stroke="rgba(255,255,255,.18)"/>';
   return s+'</svg>';
 }
@@ -489,10 +526,12 @@ function grouped(labels,series,tips,u,opt){
   for(let g=0;g<=4;g++){const vv=max*g/4,y=yy(vv);s+='<line class="gridline" x1="'+padL+'" y1="'+y+'" x2="'+(w-padR)+'" y2="'+y+'"/>'+
     '<text class="bl" x="'+(padL-6)+'" y="'+(y+3)+'" text-anchor="end">'+brl(vv)+'</text>';}
   labels.forEach((lb,i)=>{const bx=padL+i*cw,bw=cw*0.8/k;
-    const oi=opt&&opt.dim&&(opt.idxs&&opt.idxs[i]!==undefined)?opt.idxs[i]:undefined;
-    const mem=oi!==undefined?orgMembers(oi):[];
-    const on=mem.length>0;
-    const act=on&&opt.sel&&mem.every(m=>opt.sel.has(m));
+    const simple=!!(opt&&opt.dim&&!opt.idxs);
+    let oi,mem,on;
+    if(simple){oi=i;mem=[];on=true;}
+    else{oi=opt&&opt.dim&&(opt.idxs&&opt.idxs[i]!==undefined)?opt.idxs[i]:undefined;
+      mem=oi!==undefined?orgMembers(oi):[];on=mem.length>0;}
+    const act=on&&opt.sel&&(simple?opt.sel.has(i):mem.every(m=>opt.sel.has(m)));
     const click=on?(' style="cursor:pointer"'+(act?' stroke="#ffffff" stroke-width="2"':'')+' onclick="pickChart(\''+opt.dim+'\','+oi+')"'):'';
     const atitle=act?' · (filtro ativo — clique p/ remover)':'';
     series.forEach((ser,j)=>{const v=ser.values[i]||0,x=bx+cw*0.1+j*bw,y=yy(v);
@@ -517,7 +556,7 @@ function renderCharts(desp,rec){
   const pesMes=M.map((_,m)=>soma(desp.filter(r=>r[1]===m&&classe(r[7])==='pessoal'),9));
   const valMes=M.map((_,m)=>soma(desp.filter(r=>r[1]===m&&classe(r[7])==='vale'),9));
   const demMes=M.map((_,m)=>soma(desp.filter(r=>r[1]===m&&classe(r[7])==='demais'),9));
-  $('chMensal').innerHTML=mensal(M.map(mesNome),recMes,pesMes,valMes,demMes,uid('mes'),{dim:'mes',sel:FIL.geral.mes});
+  $('chMensal').innerHTML=mensal(M.map(mesNome),recMes,pesMes,valMes,demMes,uid('mes'),{dim:'mes',sel:FIL.geral.mes,avgClosed:mesesFechados()});
   $('legMes').innerHTML=legend([{name:'Receita',color:COR.receita},{name:'Despesa — Pessoal',color:COR.pessoal},
     {name:'Despesa — Vale',color:COR.vale},{name:'Despesa — Demais',color:COR.demais},
     {name:'Média acumulada receita',color:COR.receita},{name:'Média acumulada despesa',color:COR.amber}]);
@@ -637,7 +676,7 @@ function renderGeral(){
 }
 
 /* ---------- aba Receitas ---------- */
-let CATS=[],ORIGS=[],ESPS=[];
+let CATS=[],ORIGS=[],ESPS=[],RCONTRIB=[];
 function initReceitas(){
   const cats=new Set(),orig=new Set(),esp=new Set();
   D.rec.forEach(r=>{const c=D.classif[r[4]];cats.add(c[0]);orig.add(c[1]);esp.add(c[2]);});
@@ -676,6 +715,28 @@ function renderRecMatrix(rows){
   $('recMatrix').innerHTML='<div class="tablewrap"><table class="pivot"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>';
   $('recMatHint').innerHTML='Top '+top.length+' espécies por arrecadação + <b>Demais</b> · colunas mês a mês (respeitam os filtros).';
 }
+/* ---------- impostômetro: dígitos que rolam quando o valor muda ---------- */
+const ODO={len:null,cells:[]};
+function renderImpostometro(total){
+  const box=$('impOdo');if(!box)return;
+  const reduced=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const chars=String(Math.round(total||0)).split('');
+  const grp=[];for(let i=0;i<chars.length;i++){if(i>0&&(chars.length-i)%3===0)grp.push('.');grp.push(chars[i]);}
+  if(ODO.len!==grp.length){
+    box.innerHTML='<span class="cur">R$</span>';ODO.cells=[];ODO.len=grp.length;
+    grp.forEach(ch=>{
+      if(ch==='.'){const sep=document.createElement('span');sep.className='sep';sep.textContent='.';box.appendChild(sep);ODO.cells.push(null);return;}
+      const cell=document.createElement('span');cell.className='cell';
+      const strip=document.createElement('span');strip.className='strip';
+      for(let k=0;k<10;k++){const sp=document.createElement('span');sp.textContent=String(k);strip.appendChild(sp);}
+      cell.appendChild(strip);box.appendChild(cell);ODO.cells.push({strip:strip,ch:-1});
+    });
+  }
+  grp.forEach((ch,i)=>{const c=ODO.cells[i];if(!c)return;const d=+ch;
+    if(c.ch===d)return;c.strip.style.transition=reduced?'none':'';c.strip.style.transform='translateY(-'+d+'em)';c.ch=d;});
+  const meta=$('impMeta');if(meta)meta.textContent='até '+String(D.meta.fim||'')+' · gerado em '+String(D.meta.gerado_em||'');
+  const sub=$('impSub');if(sub)sub.innerHTML='Arrecadado nas <b>'+D.dims.ent.length+'</b> entidades no período filtrado · <b>'+full(total||0)+'</b>';
+}
 function renderReceitas(){
   const rows=D.rec.filter(matchReceita);
   const total=soma(rows,3);
@@ -683,20 +744,26 @@ function renderReceitas(){
   const byEsp={},byCat={},byOrig={};
   rows.forEach(r=>{const c=D.classif[r[4]];byEsp[c[2]]=(byEsp[c[2]]||0)+r[3];
     byCat[c[0]]=(byCat[c[0]]||0)+r[3];byOrig[c[1]]=(byOrig[c[1]]||0)+r[3];});
+  renderImpostometro(total);
   $('recKpis').innerHTML=[
     ['Receita arrecadada',brl(total),full(total),'no período filtrado'],
     ['Lançamentos',rows.length.toLocaleString('pt-BR'),'','registros de receita'],
     ['Contribuintes',conts.size.toLocaleString('pt-BR'),'','distintos no filtro'],
     ['Ticket médio',rows.length?brl(total/rows.length):'R$ 0','','arrecadado ÷ lançamentos'],
   ].map(kpiCard).join('');
-  $('chRecCat').innerHTML=hbar(objItems(byCat,12),PAL,uid('rcat'));
-  $('chRecOrig').innerHTML=hbar(objItems(byOrig,12),PAL,uid('rorig'));
-  $('chRecEsp').innerHTML=hbar(objItems(byEsp,12),PAL,uid('resp'));
+  $('chRecCat').innerHTML=hbar(itemsIdx(byCat,CATS,12),PAL,uid('rcat'),{dim:'cat',sel:FIL.receitas.cat});
+  $('chRecOrig').innerHTML=hbar(itemsIdx(byOrig,ORIGS,12),PAL,uid('rorig'),{dim:'orig',sel:FIL.receitas.orig});
+  $('chRecEsp').innerHTML=hbar(itemsIdx(byEsp,ESPS,12),PAL,uid('resp'),{dim:'esp',sel:FIL.receitas.esp});
   const recMes=D.meses.map((_,m)=>{let s=0;rows.forEach(r=>{if(r[1]===m)s+=r[3];});return s;});
   $('chRecMes').innerHTML=grouped(D.meses.map(mesNome),
-    [{name:'Receita',color:GRAD.receita[0],color2:GRAD.receita[1],values:recMes}],null,uid('rmes'));
+    [{name:'Receita',color:GRAD.receita[0],color2:GRAD.receita[1],values:recMes}],null,uid('rmes'),
+    {dim:'mes',sel:FIL.receitas.mes});
   const byContrib={};rows.forEach(r=>{const k=D.dims.contrib[r[5]];byContrib[k]=(byContrib[k]||0)+r[3];});
-  $('chRecContrib').innerHTML=hbar(objItems(byContrib,12),PAL,uid('rcontrib'));
+  const cRows=Object.entries(byContrib).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  RCONTRIB=cRows.map(x=>x[0]);
+  const cItems=RCONTRIB.map((label,i)=>({idx:i,label:label,value:byContrib[label]}));
+  const cSel=new Set();const cq=FIL.receitas.contribQ;const ci=cq?RCONTRIB.findIndex(l=>l.toLowerCase()===cq):-1;if(ci>=0)cSel.add(ci);
+  $('chRecContrib').innerHTML=hbar(cItems,PAL,uid('rcontrib'),{dim:'contrib',sel:cSel});
   renderRecMatrix(rows);
 }
 
