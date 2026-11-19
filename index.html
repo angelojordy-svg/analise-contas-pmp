@@ -1952,7 +1952,10 @@ function renderPanorama(){
   }
 
   const nCargos=Object.keys(byC).length;
-  $('foppCount').textContent=secs.length+' secretarias · '+rows.length.toLocaleString('pt-BR')+' servidores · '+nCargos+' cargos';
+  const busca=!!FIL.panorama.q;
+  $('foppCount').textContent=busca
+    ? rows.length.toLocaleString('pt-BR')+' servidores em '+nCargos+' cargos · árvore aberta para a busca'
+    : secs.length+' secretarias · '+rows.length.toLocaleString('pt-BR')+' servidores · '+nCargos+' cargos';
   if(!FOPP_SEED&&secs.length){
     FOPP_OPEN.add('s'+secs[0].k);
     const gk=Object.keys(secs[0].gs).sort((a,b)=>secs[0].gs[b].br-secs[0].gs[a].br)[0];
@@ -1961,22 +1964,22 @@ function renderPanorama(){
   }
   let html='<div class="fopp-thead"><span>Secretaria / vínculo / cargo</span><span>Servidores</span><span>Bruta</span><span class="fopp-liq">Líquida</span><span class="fopp-avg">Média</span><span class="fopp-part">Participação</span></div>';
   secs.forEach(s=>{
-    const sk='s'+s.k,open=FOPP_OPEN.has(sk);
+    const sk='s'+s.k,open=busca||FOPP_OPEN.has(sk);
     html+=foppRow({lvl:0,key:sk,label:D.fopag.dims.sec[s.k],n:s.n,br:s.br,li:s.li,parent:totalBr,
       parentLabel:'da folha total',open:open,kids:true,grad:'linear-gradient(90deg,#22d3ee,#a855f7)'});
     if(!open)return;
     FOPP_GROUPS.forEach(g=>{
       const G=s.gs[g.id];if(!G)return;
-      const gk=sk+'|g'+g.id,gopen=FOPP_OPEN.has(gk);
+      const gk=sk+'|g'+g.id,gopen=busca||FOPP_OPEN.has(gk);
       html+=foppRow({lvl:1,key:gk,label:g.label,n:G.n,br:G.br,li:G.li,parent:s.br,
         parentLabel:'da secretaria',open:gopen,kids:true,color:g.color,grad:g.grad,dot:true});
       if(!gopen)return;
       const cargos=Object.values(G.cs).sort((a,b)=>b.br-a.br);
-      const showAll=FOPP_OPEN.has(gk+'|all')||!!FIL.panorama.q;
+      const showAll=busca||FOPP_OPEN.has(gk+'|all');
       const vis=showAll?cargos:cargos.slice(0,8);
       vis.forEach(c=>{html+=foppRow({lvl:2,label:D.fopag.dims.cargo[c.k],n:c.n,br:c.br,li:c.li,
         parent:G.br,parentLabel:'do vínculo',color:g.color});});
-      if(!FIL.panorama.q&&cargos.length>8){
+      if(!busca&&cargos.length>8){
         if(!showAll)html+='<button type="button" class="fopp-more" data-more="'+esc(gk+'|all')+'">+ '+(cargos.length-vis.length)+' cargos · ver todos os '+cargos.length+'</button>';
         else html+='<button type="button" class="fopp-more" data-more="'+esc(gk+'|all')+'">Mostrar só os 8 principais</button>';
       }
